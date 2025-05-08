@@ -31,10 +31,8 @@ def run_optimization_logic(
     end_study_date: str,
     start_optimize: str,
     end_optimize: str,
-
     model: XGBoostModel,
-    weight_data: pd.DataFrame,        # ← 4-column sheet
-    master_data_full: pd.DataFrame,   # ← the big sheet (“マスタデータ”)
+    master_data: pd.DataFrame,
     train_memory_flag: bool = True,
 ) -> pd.DataFrame:
     """最適化ロジックを実行する関数
@@ -69,7 +67,6 @@ def run_optimization_logic(
             end_study_date,
             input_features_columns,
             temperature_setpoints_columns,
-            master_data_full, # マスターデータのシート 
         )
     else:
         print(
@@ -121,7 +118,7 @@ def run_optimization_logic(
                 temperature_range_min,
                 temperature_range_max,
                 extracted_master_data,
-            ) = extract_master_data_values(df, conduct_time, master_data_full)
+            ) = extract_master_data_values(df, conduct_time, master_data)
         else:
             # 月が変わった場合(conduct_time>0)、その月に対応するマスターデータのパラメータを再取得
             new_month = df["date"][conduct_time].date().month
@@ -144,7 +141,7 @@ def run_optimization_logic(
                     temperature_range_min,
                     temperature_range_max,
                     extracted_master_data,
-                ) = extract_master_data_values(df, conduct_time, master_data_full)
+                ) = extract_master_data_values(df, conduct_time, master_data)
 
         hour = int(
             pd.to_datetime(df.loc[conduct_time, "datetime"]).time().strftime("%H")
@@ -394,7 +391,8 @@ def extract_master_data_values(
             - extracted_master_data (pd.DataFrame): The full extracted master data row, used to access additional fields.
     """
     month = df["date"][conduct_time].date().month
-    extracted_master_data = extract_master_data(df, conduct_time, master_data_full)
+    extracted_master_data = extract_master_data(df, conduct_time, master_data["最適化"])
+
     latest_weight = extracted_master_data.iloc[0:1, 2:6]
     master_pro = extracted_master_data.iloc[0:1, 6:15]
     master_com = extracted_master_data.iloc[0:1, 21:25]

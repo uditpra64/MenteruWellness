@@ -4,9 +4,7 @@ import os
 import sys
 import time
 
-# ensure src/ is on PYTHONPATH
 sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
-
 from config_settings.config_optimize import (
     END_OPTIMIZE_DATE_OPTIMIZE,
     END_STUDY_DATE_OPTIMIZE,
@@ -52,29 +50,42 @@ def main():
 
     To run all steps: uv run main.py
     To run specific steps (e.g. preprocess and train only):
-      uv run main.py --run-preprocess --run-train
+    uv run main.py --run-preprocess --run-train
+
+    1. Run Data Preprocessing
+    2. Run Prediction on lineage/s
+    3. Run Optimization on lineage/s
+    4. Save Results for each lineage
     """
     start = time.time()
-
     # ---------------------------------------
     # Parse Arguments 引数をパース
     # ---------------------------------------
     args = parse_arguments()
-    if any([args.run_preprocess, args.run_train, args.run_optimize, args.save_results]):
-        run_preprocess = args.run_preprocess
-        run_train = args.run_train
-        run_optimize = args.run_optimize
-        run_save_results = args.save_results
+    if any(
+        [
+            args.run_preprocess,
+            args.run_train,
+            args.run_optimize,
+            args.save_results,
+        ]
+    ):
+        run_preprocess, run_train, run_optimize, run_save_results = (
+            args.run_preprocess,
+            args.run_train,
+            args.run_optimize,
+            args.save_results,
+        )
     elif args.run_optimize:
-        # If only optimize is specified, training must also run
+        # If optimization is only specified, training is also necessary
         run_preprocess, run_train, run_optimize, run_save_results = (
             False,
             True,
-            True,
+            args.run_optimize,
             False,
         )
     else:
-        # If no flags, run everything
+        # If no arguments are specified, all steps are executed
         run_preprocess, run_train, run_optimize, run_save_results = (
             True,
             True,
@@ -91,20 +102,17 @@ def main():
             start_date_preprocess=START_TIME_PREPROCESS,
             end_date_preprocess=END_TIME_PREPROCESS,
         )
-        # --- COMMENTED OUT: skip SQL/database fetch so you can run locally ---
-        # preprocess_runner.run()
+        preprocess_runner.run()
 
     logging.info("====================================")
 
-    # Four “lineages” (zones) to loop over
     lineages_list = ["4F_西", "4F_東", "5F_西", "5F_東"]
-
     if run_train:
         for lineage in lineages_list:
             # --------------------------------
             # Run Prediction 予測を実行
             # --------------------------------
-            logging.info(f"Prediction is running... for {lineage}")
+            logging.info("Prediction is running... for {}".format(lineage))
             predict_runner = PredictionRunner(
                 input_features=LINEAGES_INPUT_FEATURES_MAPPING[lineage],
                 output_feature_columns=LINEAGES_OUTPUT_FEATURES_MAPPING[lineage],
@@ -112,11 +120,17 @@ def main():
             )
             model = predict_runner.run(lineage=lineage)
 
+            logging.info("====================================")
             if run_optimize:
-                logging.info(f"Optimization is running... for {lineage}")
+                # --------------------------------
+                # Run Optimization 最適化を実行
+                # --------------------------------
+                logging.info("Optimization is running... for {}".format(lineage))
                 optimize_runner = OptimizationRunner(
                     input_features=LINEAGES_INPUT_FEATURES_MAPPING[lineage],
-                    temperature_setpoints_columns=TEMPERATURE_SETPOINTS_COLUMNS[lineage],
+                    temperature_setpoints_columns=TEMPERATURE_SETPOINTS_COLUMNS[
+                        lineage
+                    ],
                     start_study_date=START_STUDY_DATE_OPTIMIZE,
                     end_study_date=END_STUDY_DATE_OPTIMIZE,
                     start_optimize_date=START_OPTIMIZE_DATE_OPTIMIZE,
@@ -124,21 +138,21 @@ def main():
                     lineage=lineage,
                     model=model,
                     train_memory_flag=False,
-                    full_master_sheet="最適化",
                 )
                 optimize_runner.run()
-
-            # --------------------------------------------
-            # Save Results for each lineage ごとの結果を保存
-            # --------------------------------------------
-            if run_save_results:
-                logging.info(f"Saving results for {lineage}...")
-                # TODO: extract and implement your saving logic here
+        # --------------------------------------------
+        # Save Results for each lineage ごとの結果を保存
+        # --------------------------------------------
+        if run_save_results:
+            # TODO: save the results ( we need to extract the code from optimization and put it here )
+            logging.info("Saving results...")
 
     logging.info("====================================")
-    elapsed = int(time.time() - start)
+    conducted_time = int(time.time() - start)
     logging.info(
-        f"All logic completed successfully in {elapsed // 60}m {elapsed % 60}s"
+        "All logic completed successfully in {}m {}s".format(
+            conducted_time // 60, conducted_time % 60
+        )
     )
 
 

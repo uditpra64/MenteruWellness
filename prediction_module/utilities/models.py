@@ -12,15 +12,12 @@ class XGBoostModel:
     1日階差を取ったデータを使ってXGBoostモデルをトレーニングし、予測を行います。
     """
 
-    def __init__(self, input_features, output_features, params=None):
-
-        """
-        params: dict or None.  If None, falls back to empty dict so XGBRegressor uses defaults.
-        """
+    def __init__(self, input_features, output_features, params={}):
         self.input_features = input_features
         self.output_features = output_features
-        self.params = params or {}
+        self.params = params
         self.model = XGBRegressor(**self.params)
+        self.pred_min = 0
         self.pred_max = None
 
     def preprocess(self, train, valid):
