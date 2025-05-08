@@ -1,0 +1,47 @@
+[project]
+name = "takenaka-wellness"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "alembic==1.13.3",
+    "colorlog==6.9.0",
+    "contourpy==1.3.0",
+    "cycler==0.12.1",
+    "cython>=3.0.12",
+    "et-xmlfile==2.0.0",
+    "fonttools==4.54.1",
+    "joblib==1.4.2",
+    "jpholiday==0.1.10",
+    "kiwisolver==1.4.7",
+    "llvmlite==0.43.0",
+    "mako==1.3.6",
+    "markupsafe==3.0.2",
+    "matplotlib==3.9.2",
+    "numba==0.60.0",
+    "numpy==1.26.4",
+    "openpyxl==3.1.5",
+    "optuna==4.0.0",
+    "packaging==24.1",
+    "pandas==2.2.3",
+    "pillow==11.0.0",
+    "psychrolib==2.5.0",
+    "psycopg2>=2.9.10",
+    "pyarmor==9.0.3",
+    "pyparsing==3.2.0",
+    "pythermalcomfort==2.10.0",
+    "python-dateutil==2.9.0.post0",
+    "pytz==2024.2",
+    "pyyaml==6.0.2",
+    "scikit-learn==1.5.2",
+    "scipy==1.14.1",
+    "seaborn==0.13.2",
+    "six==1.16.0",
+    "sqlalchemy==2.0.36",
+    "threadpoolctl==3.5.0",
+    "tqdm==4.66.4",
+    "typing-extensions==4.12.2",
+    "tzdata==2024.2",
+    "xgboost==2.1.1",
+]
