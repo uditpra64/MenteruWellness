@@ -41,24 +41,7 @@ def create_df_for_normalize(
     # pmv_values = []  # List to store PMV values
 
     master_pro_path = get_path_from_config("master_data_path")
-    try:
-        # Read with header=None to handle multi-row headers
-        master_data_xl = pd.ExcelFile(master_pro_path)
-        if "最適化" in master_data_xl.sheet_names:
-            master_data = {"最適化": pd.read_excel(master_data_xl, sheet_name="最適化", header=None)}
-            
-            # Process other case sheets if they exist
-            for case_num in range(1, 6):
-                case_sheet = f"重み係数_Case{case_num}"
-                if case_sheet in master_data_xl.sheet_names:
-                    master_data[case_sheet] = pd.read_excel(master_data_xl, sheet_name=case_sheet, header=None)
-        else:
-            print("Warning: '最適化' sheet not found in master data")
-            master_data = {"最適化": pd.DataFrame()}
-    except Exception as e:
-        print(f"Error loading master data: {e}")
-        master_data = {"最適化": pd.DataFrame()}
-    
+    master_data = pd.read_excel(master_pro_path, sheet_name=None)
     lineage = lineage.replace("_", "")
     used_column_list = input_features_columns
     other_column = temperature_setpoints_columns
@@ -67,97 +50,34 @@ def create_df_for_normalize(
     for time in tqdm(
         range(len(df)), desc=f"df_for_normalize_{lineage}を作成中", ncols=100
     ):
-        try:
-            # Extract master data
-            extracted_master_data = extract_master_data(df, time, master_data["最適化"])
-            
-            # In the extracted_master_data, create a dictionary to map column positions to values
-            master_data_dict = {}
-            
-            # Intellectual productivity coefficients (based on positions from the Excel)
-            # Morning
-            master_data_dict["知的生産性_朝_A"] = extracted_master_data.iloc[0, 0] if extracted_master_data.shape[1] > 0 else 0
-            master_data_dict["知的生産性_朝_B"] = extracted_master_data.iloc[0, 1] if extracted_master_data.shape[1] > 1 else 0
-            master_data_dict["知的生産性_朝_C"] = extracted_master_data.iloc[0, 2] if extracted_master_data.shape[1] > 2 else 0
-            
-            # Afternoon
-            master_data_dict["知的生産性_昼_A"] = extracted_master_data.iloc[0, 3] if extracted_master_data.shape[1] > 3 else 0
-            master_data_dict["知的生産性_昼_B"] = extracted_master_data.iloc[0, 4] if extracted_master_data.shape[1] > 4 else 0
-            master_data_dict["知的生産性_昼_C"] = extracted_master_data.iloc[0, 5] if extracted_master_data.shape[1] > 5 else 0
-            
-            # Evening
-            master_data_dict["知的生産性_夕_A"] = extracted_master_data.iloc[0, 6] if extracted_master_data.shape[1] > 6 else 0
-            master_data_dict["知的生産性_夕_B"] = extracted_master_data.iloc[0, 7] if extracted_master_data.shape[1] > 7 else 0
-            master_data_dict["知的生産性_夕_C"] = extracted_master_data.iloc[0, 8] if extracted_master_data.shape[1] > 8 else 0
-            
-            # Temperature ranges
-            master_data_dict["知的生産性_下限温度_朝"] = extracted_master_data.iloc[0, 9] if extracted_master_data.shape[1] > 9 else 20
-            master_data_dict["知的生産性_上限温度_朝"] = extracted_master_data.iloc[0, 10] if extracted_master_data.shape[1] > 10 else 28
-            master_data_dict["知的生産性_下限温度_昼"] = extracted_master_data.iloc[0, 11] if extracted_master_data.shape[1] > 11 else 20
-            master_data_dict["知的生産性_上限温度_昼"] = extracted_master_data.iloc[0, 12] if extracted_master_data.shape[1] > 12 else 28
-            master_data_dict["知的生産性_下限温度_夕"] = extracted_master_data.iloc[0, 13] if extracted_master_data.shape[1] > 13 else 20
-            master_data_dict["知的生産性_上限温度_夕"] = extracted_master_data.iloc[0, 14] if extracted_master_data.shape[1] > 14 else 28
-            
-            # Comfort parameters
-            master_data_dict["室内相対湿度 [%]"] = extracted_master_data.iloc[0, 15] if extracted_master_data.shape[1] > 15 else 50
-            master_data_dict["代謝量 [met]"] = extracted_master_data.iloc[0, 16] if extracted_master_data.shape[1] > 16 else 1.1
-            master_data_dict["着衣量 [clo]"] = extracted_master_data.iloc[0, 17] if extracted_master_data.shape[1] > 17 else 0.8
-            master_data_dict["気流速度 [m/s]"] = extracted_master_data.iloc[0, 18] if extracted_master_data.shape[1] > 18 else 0.1
-            
-            # Create DataFrame for productivity calculation
-            master_pro = pd.DataFrame({
-                "知的生産性_朝_A": [master_data_dict["知的生産性_朝_A"]],
-                "知的生産性_朝_B": [master_data_dict["知的生産性_朝_B"]],
-                "知的生産性_朝_C": [master_data_dict["知的生産性_朝_C"]],
-                "知的生産性_昼_A": [master_data_dict["知的生産性_昼_A"]],
-                "知的生産性_昼_B": [master_data_dict["知的生産性_昼_B"]],
-                "知的生産性_昼_C": [master_data_dict["知的生産性_昼_C"]],
-                "知的生産性_夕_A": [master_data_dict["知的生産性_夕_A"]],
-                "知的生産性_夕_B": [master_data_dict["知的生産性_夕_B"]],
-                "知的生産性_夕_C": [master_data_dict["知的生産性_夕_C"]],
-            })
-            
-            # Create DataFrame for comfort calculation
-            master_com = pd.DataFrame({
-                "室内相対湿度 [%]": [master_data_dict["室内相対湿度 [%]"]],
-                "代謝量 [met]": [master_data_dict["代謝量 [met]"]],
-                "着衣量 [clo]": [master_data_dict["着衣量 [clo]"]],
-                "気流速度 [m/s]": [master_data_dict["気流速度 [m/s]"]],
-            })
-            
-            # Check that df remains a DataFrame at all times
-            assert isinstance(
-                df, pd.DataFrame
-            ), f"df is not a DataFrame at time index {time}"
+        # master_data # ここで読み込んでいる
+        extracted_master_data = extract_master_data(df, time, master_data["最適化"])
+        # latest_weight = extracted_master_data.iloc[0:1, 2:6]  # 重み係数,dataframe
+        master_pro = extracted_master_data.iloc[
+            0:1, 6:15
+        ]  # 知的生産性の固定変数,dataframe
+        master_com = extracted_master_data.iloc[0:1, 21:25]  # 快適性指標の固定変数
+        # Check that df remains a DataFrame at all times
+        assert isinstance(
+            df, pd.DataFrame
+        ), f"df is not a DataFrame at time index {time}"
 
-            energy_consumption = run_prediction_logic(df, used_column_list, time, model)
+        energy_consumption = run_prediction_logic(df, used_column_list, time, model)
 
-            productivity_value = calculate_productivity(df, other_column, master_pro, time)
+        productivity_value = calculate_productivity(df, other_column, master_pro, time)
 
-            comfort_value, _, _ = calculate_comfort(df, other_column, master_com, time)
-            comfort_value_exp = np.exp(0.05 * comfort_value) if not np.isnan(comfort_value) else np.nan
+        comfort_value, _, _ = calculate_comfort(df, other_column, master_com, time)
+        comfort_value_exp = np.exp(0.05 * comfort_value)
 
-            data_for_normalize.append(
-                {
-                    "datetime": df.loc[time, "datetime"],
-                    "消費電力量": energy_consumption if energy_consumption is not None else 0,
-                    "快適性指標": comfort_value if not np.isnan(comfort_value) else 50,
-                    "快適性指標_exp": comfort_value_exp if not np.isnan(comfort_value_exp) else np.exp(0.05 * 50),
-                    "知的生産性": productivity_value if not np.isnan(productivity_value) else 0,
-                }
-            )
-        except Exception as e:
-            print(f"Error processing time {time}: {e}")
-            # Add a default entry
-            data_for_normalize.append(
-                {
-                    "datetime": df.loc[time, "datetime"] if time < len(df) else pd.Timestamp.now(),
-                    "消費電力量": 0,
-                    "快適性指標": 50,
-                    "快適性指標_exp": np.exp(0.05 * 50),
-                    "知的生産性": 0,
-                }
-            )
+        data_for_normalize.append(
+            {
+                "datetime": df.loc[time, "datetime"],
+                "消費電力量": energy_consumption,
+                "快適性指標": comfort_value,
+                "快適性指標_exp": comfort_value_exp,
+                "知的生産性": productivity_value,
+            }
+        )
 
     # データを保存
     df_for_normalize = pd.DataFrame(data_for_normalize)
@@ -175,26 +95,15 @@ def create_df_for_normalize(
     return df_for_normalize
 
 
-def normalize_data(data: float, column_name: pd.Series) -> float:
+def normalize_data(data: pd.DataFrame, column_name: str) -> pd.DataFrame:
     """
     各指標を正規化する関数
 
     Args:
-        data (float): 正規化する値
-        column_name (pd.Series): 正規化の基準となる値の列
-
-    Returns:
-        float: 正規化された値
+        data (pd.DataFrame): データフレーム
+        column_name (str): 列名
     """
-    # Check if max and min are the same (all values identical)
-    denominator = column_name.max() - column_name.min()
-    
-    if denominator == 0 or pd.isna(denominator):
-        # If all values are identical, return 0.5 (mid-point of normalization range)
-        return 0.5
-    else:
-        # Normal normalization
-        return (data - column_name.min()) / denominator
+    return (data - column_name.min()) / (column_name.max() - column_name.min())
 
 
 def extract_master_data(
@@ -202,51 +111,28 @@ def extract_master_data(
 ) -> pd.DataFrame:
     """
     月別に必要なマスタデータを抽出する関数
-    
-    This function now handles multi-row headers properly by looking at row values rather than header names
 
     Args:
         df (pd.DataFrame): データフレーム
         time (int): データフレームの各行のインデックス（タイムステップ）
-        master_data (pd.DataFrame): マスタデータフレーム (with header=None)
+        master_data (pd.DataFrame): マスタデータフレーム
     """
-    try:
-        # Get the current month
-        current_month = df["date"][time].date().month
-        
-        # Check if master_data is empty
-        if master_data.empty:
-            print("Warning: Master data is empty")
-            # Return an empty DataFrame with the right shape
-            return pd.DataFrame(np.zeros((1, 30)))  # Return empty with 30 columns for all the expected data
-            
-        # Locate the month column (typically the first column)
-        month_col_idx = 0
-        
-        # Find month header row (assuming it's in the first or second row)
-        month_header_row = 0
-        if "月" in master_data.iloc[0].values:
-            month_header_row = 0
-        elif "月" in master_data.iloc[1].values:
-            month_header_row = 1
-        
-        # Identify the first data row (after headers)
-        first_data_row = month_header_row + 1
-        
-        # Find the row for the current month
-        month_rows = master_data[master_data.iloc[:, month_col_idx] == current_month]
-        
-        if month_rows.empty:
-            print(f"No data found for month {current_month}, using first month's data")
-            # Use the first month's data as a fallback
-            month_data_row = master_data.iloc[first_data_row:first_data_row+1, :]
-        else:
-            month_data_row = month_rows.iloc[0:1, :]
-        
-        # Return just the data values for the month
-        return month_data_row
-        
-    except Exception as e:
-        print(f"Error in extract_master_data: {e}")
-        # Return a minimal DataFrame with zeros
-        return pd.DataFrame(np.zeros((1, 30)))  # Return empty with 30 columns for all the expected data
+    a = master_data.iloc[0:1, :]
+    b = master_data[master_data["月"] == df["date"][time].date().month]
+
+    master_data_month = pd.concat([a, b], axis=0, ignore_index=True)
+    columns_list = master_data_month.columns
+
+    master_data_month["月"] = master_data_month["月"].astype("object")
+    master_data_month.at[0, "月"] = columns_list[0]
+    master_data_month.at[0, "期間区分"] = columns_list[1]
+    master_data_month["ベンチマークケース設定温度"] = master_data_month[
+        "ベンチマークケース設定温度"
+    ].astype("object")
+
+    master_data_month.at[0, "ベンチマークケース設定温度"] = columns_list[-1]
+    master_data_month.columns = master_data_month.iloc[0]
+    master_data_month = master_data_month.drop(master_data_month.index[0])
+    master_data_month.reset_index(drop=True, inplace=True)
+
+    return master_data_month

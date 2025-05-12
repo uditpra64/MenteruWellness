@@ -30,7 +30,6 @@ class OptimizationRunner:
         train_memory_flag: bool = False,
         lineage: str = "4F_西",
         model: XGBoostModel = None,
-        case: str = None,  # Added case parameter
     ):
         self.input_features = input_features
         self.temperature_setpoints_columns = temperature_setpoints_columns
@@ -49,7 +48,6 @@ class OptimizationRunner:
         self.input_data = None
         self.lineage = lineage
         self.model = model
-        self.case = case  # Store case parameter
 
     def run(self):
         self._load_data()
@@ -65,7 +63,6 @@ class OptimizationRunner:
             model=self.model,
             master_data=self.master_data,
             train_memory_flag=self.train_memory_flag,
-            case=self.case,  # Pass case parameter to optimization logic
         )
 
     def _load_data(self):
