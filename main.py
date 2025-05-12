@@ -41,6 +41,23 @@ def parse_arguments():
         "--run-optimize", action="store_true", help="Execute optimization."
     )
     parser.add_argument("--save-results", action="store_true", help="Save results.")
+    parser.add_argument(
+        "--case", 
+        choices=["Case1", "Case2", "Case3", "Case4", "Case5", "all"],
+        default="all",
+        help="Specify which case to run (default: all)"
+    )
+    parser.add_argument(
+        "--skip-db", action="store_true",
+        help="Skip database connection during preprocessing."
+    )
+    # Add lineage argument
+    parser.add_argument(
+        "--lineage",
+        choices=["4F_西", "4F_東", "5F_西", "5F_東", "all"],
+        default="all",
+        help="Specify which lineage to run (default: all)"
+    )
     return parser.parse_args()
 
 
@@ -96,36 +113,80 @@ def main():
     # ---------------------------------------
     # Run Preprocessing データ前処理を実行
     # ---------------------------------------
-    if run_preprocess:
+    if run_preprocess and not args.skip_db:
         logging.info("Data preprocessing is running...")
         preprocess_runner = DataPreprocessRunner(
             start_date_preprocess=START_TIME_PREPROCESS,
             end_date_preprocess=END_TIME_PREPROCESS,
         )
         preprocess_runner.run()
+    elif run_preprocess and args.skip_db:
+        logging.info("Skipping database connection as requested")
 
     logging.info("====================================")
 
-    lineages_list = ["4F_西", "4F_東", "5F_西", "5F_東"]
+    # Define lineages based on command line argument
+    if args.lineage == "all":
+        lineages_list = ["4F_西", "4F_東", "5F_西", "5F_東"]
+    else:
+        lineages_list = [args.lineage]
+    
+    # Define optimization cases
+    if args.case == "all":
+        cases = ["Case1", "Case2", "Case3", "Case4", "Case5"]
+    else:
+        cases = [args.case]
+        
+    # Dictionary to store models for each lineage
+    lineage_models = {}
+    
     if run_train:
         for lineage in lineages_list:
             # --------------------------------
             # Run Prediction 予測を実行
             # --------------------------------
-            logging.info("Prediction is running... for {}".format(lineage))
+            logging.info(f"Prediction is running... for {lineage}")
             predict_runner = PredictionRunner(
                 input_features=LINEAGES_INPUT_FEATURES_MAPPING[lineage],
                 output_feature_columns=LINEAGES_OUTPUT_FEATURES_MAPPING[lineage],
                 output_feature=LINEAGES_AGGREGATED_OUTPUT_FEATURE,
             )
             model = predict_runner.run(lineage=lineage)
+            lineage_models[lineage] = model
 
             logging.info("====================================")
-            if run_optimize:
-                # --------------------------------
-                # Run Optimization 最適化を実行
-                # --------------------------------
-                logging.info("Optimization is running... for {}".format(lineage))
+
+    if run_optimize:
+        # --------------------------------
+        # Run Optimization for all cases and lineages
+        # --------------------------------
+        for case in cases:
+            logging.info(f"Running optimization for {case}...")
+            for lineage in lineages_list:
+                # If we didn't train models in this run, check if the model is available
+                model = lineage_models.get(lineage)
+                if model is None and not run_train:
+                    # Try to load the model from file
+                    logging.info(f"Model not trained in this run, trying to load from file for {lineage}")
+                    try:
+                        from prediction_module.electricity_module.train_logic import XGBoostModel
+                        import pickle
+                        from data_module.config.utils import get_path_from_config
+                        
+                        pkl_path = get_path_from_config("pkl_path")
+                        model_file = f"{pkl_path}/predicted_electricity_{lineage}.pkl"
+                        if os.path.exists(model_file):
+                            with open(model_file, "rb") as f:
+                                model = pickle.load(f)
+                            logging.info(f"Loaded model from {model_file}")
+                        else:
+                            logging.error(f"Model file {model_file} not found")
+                            continue
+                    except Exception as e:
+                        logging.error(f"Error loading model for {lineage}: {e}")
+                        continue
+                
+                logging.info(f"Optimization is running... for {case}, {lineage}")
                 optimize_runner = OptimizationRunner(
                     input_features=LINEAGES_INPUT_FEATURES_MAPPING[lineage],
                     temperature_setpoints_columns=TEMPERATURE_SETPOINTS_COLUMNS[
@@ -138,8 +199,10 @@ def main():
                     lineage=lineage,
                     model=model,
                     train_memory_flag=False,
+                    case=case,  # Pass the current case
                 )
                 optimize_runner.run()
+        
         # --------------------------------------------
         # Save Results for each lineage ごとの結果を保存
         # --------------------------------------------
