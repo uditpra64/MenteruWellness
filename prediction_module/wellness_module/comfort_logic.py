@@ -25,6 +25,8 @@ def calculate_comfort(
     df_cons["PPD"] = np.nan
     df_cons["快適性指標"] = np.nan
 
+    # With header=1, we get clean column names
+    # Get values directly by column name
     indoor_relative_humidity = master_com.iloc[0, 0]
     met = master_com.iloc[0, 1]
     clo = master_com.iloc[0, 2]
@@ -34,8 +36,6 @@ def calculate_comfort(
         v=v, met=1
     )  # metは代謝量だが，1に設定すると受領データとの当てはまりがよかったので1にしている
 
-    # 更新部分
-    # tr_column = [s for s in column_name if "設定温度" in s][0]
     tr_column = column_name
     tdb = df.loc[
         t - 1 if t > 0 else t, tr_column

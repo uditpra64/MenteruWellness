@@ -2,10 +2,11 @@ import time
 from typing import Tuple
 from datetime import datetime, timedelta
 import os
-
+import logging
 import numpy as np
 import pandas as pd
 from config_settings.config_optimize import FINAL_OPTIMIZE_OUTOUT_COLUMN
+from config_settings.config_common import TIMESTEP
 from data_module.config.utils import (
     get_path_from_config,
     get_path_from_config_for_outside_base_folder,
@@ -22,8 +23,6 @@ from prediction_module.wellness_module.productivity_logic import calculate_produ
 from pythermalcomfort.utilities import v_relative
 from tqdm import tqdm
 
-from config_settings.config_common import *
-
 # 最適化を実行する関数
 def run_optimization_logic(
     df: pd.DataFrame,
@@ -37,6 +36,7 @@ def run_optimization_logic(
     model: XGBoostModel,
     master_data: pd.DataFrame,
     train_memory_flag: bool = True,
+    case_num: int = 1,  # Add case number parameter
 ) -> pd.DataFrame:
     """最適化ロジックを実行する関数
 
@@ -56,6 +56,7 @@ def run_optimization_logic(
         end_optimize (str): 最適化期間の終了日
         model (XGBoostModel): 学習モデル
         master_data (pd.DataFrame): マスターデータフレーム　（xlsxファイル）
+        case_num (int): ケース番号 (1-5)
     """
 
     start = time.time()
@@ -96,7 +97,7 @@ def run_optimization_logic(
     temperature_range_min, temperature_range_max = None, None
     # 各時間ステップごとに最適な設定温度を決定
     evaluation_data = []
-    for conduct_time in tqdm(range(len(df)), desc="最適化を実行中", ncols=100):
+    for conduct_time in tqdm(range(len(df)), desc=f"最適化を実行中 (Case {case_num})", ncols=100):
         max_g = None
         best_temp = None
 
@@ -121,7 +122,7 @@ def run_optimization_logic(
                 temperature_range_min,
                 temperature_range_max,
                 extracted_master_data,
-            ) = extract_master_data_values(df, conduct_time, master_data)
+            ) = extract_master_data_values(df, conduct_time, master_data, case_num)
         else:
             # 月が変わった場合(conduct_time>0)、その月に対応するマスターデータのパラメータを再取得
             new_month = df["date"][conduct_time].date().month
@@ -144,7 +145,7 @@ def run_optimization_logic(
                     temperature_range_min,
                     temperature_range_max,
                     extracted_master_data,
-                ) = extract_master_data_values(df, conduct_time, master_data)
+                ) = extract_master_data_values(df, conduct_time, master_data, case_num)
 
         hour = int(
             pd.to_datetime(df.loc[conduct_time, "datetime"]).time().strftime("%H")
@@ -337,7 +338,7 @@ def run_optimization_logic(
                 "PMV計算時気流": v_relative(v=master_com.iloc[0, 3], met=1),
                 "PMV計算時着衣量": master_com.iloc[0, 2],
                 "PMV計算時活動量": master_com.iloc[0, 1],
-                "空調期間": extracted_master_data.loc[0, "期間区分"],
+                "空調期間": extracted_master_data.iloc[0, 1],  # Second column is 期間区分
                 "知的生産性考慮可否": considered_productivity,
                 # "設定PMV [-]": pmv_value,
                 "予測知的生産性_ベンチマーク [-]": benchmark_productivity_value,
@@ -360,59 +361,64 @@ def run_optimization_logic(
         pmv_values.append(pmv_value)
         evaluation_data[t]["設定PMV [-]"] = pmv_value
 
-    #変更する必要あり(一旦作っています)
-    weight_case="case1"
     # 結果を保存
     output_df = pd.DataFrame(evaluation_data)
     # 最終的な出力カラムのみを抽出
     output_df = output_df[FINAL_OPTIMIZE_OUTOUT_COLUMN]  
-    output_filename , output_df = make_output_df(start_optimize.hour,lineage,start_optimize,end_optimize,output_df,weight_case)
+    # Convert start_optimize to datetime if it's a string
+    if isinstance(start_optimize, str):
+        start_optimize = pd.to_datetime(start_optimize)
+    if isinstance(end_optimize, str):
+        end_optimize = pd.to_datetime(end_optimize)
+        
+    output_filename , output_df = make_output_df(start_optimize,lineage,end_optimize,output_df,case_num)
     output_df.to_csv(output_filename, encoding="cp932", index=False)
 
     # 最適化に要した時間を計算
     optimize_time = int(time.time() - start)  
     print(
-        f"最適化が完了しました。要した時間={optimize_time // 60} 分 {optimize_time % 60} 秒"
+        f"最適化が完了しました (Case {case_num})。要した時間={optimize_time // 60} 分 {optimize_time % 60} 秒"
     )
 
 
 def extract_master_data_values(
-    df: pd.DataFrame, conduct_time: int, master_data: pd.DataFrame
+    df: pd.DataFrame, conduct_time: int, master_data: pd.DataFrame, case_num: int = 1
 ) -> Tuple:
     """
-    Extracts necessary values from the master data based on the conduct time.
-
-    Args:
-        df (pd.DataFrame): The DataFrame containing date information.
-        conduct_time (int): The current time index used for extraction.
-        master_data (pd.DataFrame): DataFrame containing master data for optimization.
-
-    Returns:
-        Tuple containing:
-            - month (int): Month of the current conduct time.
-            - latest_weight (pd.DataFrame): DataFrame with the latest weight coefficients.
-            - master_pro (pd.DataFrame): DataFrame with fixed variables for intellectual productivity.
-            - master_com (pd.DataFrame): DataFrame with fixed variables for comfort indicators.
-            - temperature_range (List[float]): List of temperature ranges for time steps.
-            - weight_pro (float): Weight for intellectual productivity.
-            - weight_com (float): Weight for comfort indicators.
-            - benchmark_temp (float): Benchmark setting temperature.
-            - temp_range_morning_min (float): Lower temperature limit for productivity in the morning.
-            - temp_range_morning_max (float): Upper temperature limit for productivity in the morning.
-            - temp_range_afternoon_min (float): Lower temperature limit for productivity in the afternoon.
-            - temp_range_afternoon_max (float): Upper temperature limit for productivity in the afternoon.
-            - temp_range_evening_min (float): Lower temperature limit for productivity in the evening.
-            - temp_range_evening_max (float): Upper temperature limit for productivity in the evening.
-            - temperature_range_min (float): Minimum temperature range.
-            - temperature_range_max (float): Maximum temperature range.
-            - extracted_master_data (pd.DataFrame): The full extracted master data row, used to access additional fields.
+    Extracts necessary values from the master data based on the conduct time and case number.
     """
     month = df["date"][conduct_time].date().month
     extracted_master_data = extract_master_data(df, conduct_time, master_data["最適化"])
+    
+    # Debug: Print column names on first iteration
+    if conduct_time == 0:
+        print(f"Optimization sheet columns: {list(extracted_master_data.columns)[:10]}...")
 
-    latest_weight = extracted_master_data.iloc[0:1, 2:6]
-    master_pro = extracted_master_data.iloc[0:1, 6:15]
-    master_com = extracted_master_data.iloc[0:1, 21:25]
+    # Get weight data from the appropriate case sheet
+    weight_sheet_name = f"重み係数_Case{case_num}"
+    if weight_sheet_name not in master_data:
+        print(f"Warning: {weight_sheet_name} not found in master_data. Using default Case1.")
+        weight_sheet_name = "重み係数_Case1"
+    
+    # Extract weights from the case-specific sheet
+    weight_data = master_data[weight_sheet_name]
+    
+    # With header=1, the first column (Unnamed: 0) contains the month
+    month_col = weight_data.columns[0]
+    
+    # Get the row that matches the current month
+    weight_row = weight_data[weight_data[month_col] == month]
+    if weight_row.empty:
+        print(f"Warning: No weight data found for month {month} in {weight_sheet_name}. Using first row.")
+        weight_row = weight_data.iloc[0:1]
+    
+    # Extract the weight columns directly by name
+    latest_weight = weight_row[["ウェルネス重み係数_コアタイム", "省エネ重み係数_コアタイム", 
+                               "ウェルネス重み係数_残業時", "省エネ重み係数_残業時"]]
+    
+    # Get other data from optimization sheet
+    master_pro = extracted_master_data.iloc[0:1, 2:11]
+    master_com = extracted_master_data.iloc[0:1, 17:21]
     temperature_range_max = extracted_master_data.iloc[0, -3]
     temperature_range_min = extracted_master_data.iloc[0, -2]
     temperature_range = [
@@ -424,12 +430,24 @@ def extract_master_data_values(
     weight_pro = extracted_master_data.iloc[0, -5]
     weight_com = extracted_master_data.iloc[0, -4]
     benchmark_temp = extracted_master_data.iloc[0, -1]
-    temp_range_morning_min = extracted_master_data["知的生産性_下限温度_朝"].iloc[0]
-    temp_range_morning_max = extracted_master_data["知的生産性_上限温度_朝"].iloc[0]
-    temp_range_afternoon_min = extracted_master_data["知的生産性_下限温度_昼"].iloc[0]
-    temp_range_afternoon_max = extracted_master_data["知的生産性_上限温度_昼"].iloc[0]
-    temp_range_evening_min = extracted_master_data["知的生産性_下限温度_夕"].iloc[0]
-    temp_range_evening_max = extracted_master_data["知的生産性_上限温度_夕"].iloc[0]
+    
+    # Try to get temperature range values by column name, with fallback to positional
+    try:
+        temp_range_morning_min = extracted_master_data["知的生産性_下限温度_朝"].iloc[0]
+        temp_range_morning_max = extracted_master_data["知的生産性_上限温度_朝"].iloc[0]
+        temp_range_afternoon_min = extracted_master_data["知的生産性_下限温度_昼"].iloc[0]
+        temp_range_afternoon_max = extracted_master_data["知的生産性_上限温度_昼"].iloc[0]
+        temp_range_evening_min = extracted_master_data["知的生産性_下限温度_夕"].iloc[0]
+        temp_range_evening_max = extracted_master_data["知的生産性_上限温度_夕"].iloc[0]
+    except KeyError:
+        # Fallback to positional access if column names don't match
+        print("Warning: Temperature range columns not found by name, using positional access")
+        temp_range_morning_min = extracted_master_data.iloc[0, 15]
+        temp_range_morning_max = extracted_master_data.iloc[0, 16]
+        temp_range_afternoon_min = extracted_master_data.iloc[0, 17]
+        temp_range_afternoon_max = extracted_master_data.iloc[0, 18]
+        temp_range_evening_min = extracted_master_data.iloc[0, 19]
+        temp_range_evening_max = extracted_master_data.iloc[0, 20]
 
     return (
         month,
@@ -477,61 +495,91 @@ def make_pre_folder_path(timestep:int)->str:
      実行日のファイルを読み取り，0時～x時までの表と最適化結果の表をマージして保存
 """
 def make_output_df(
-        start:int,
-        lineage:str,
-        start_optimize:datetime,
-        end_optimize:datetime,
-        output_df:pd.DataFrame,
-        weight_case:str) -> Tuple[str, pd.DataFrame]:
+        start_optimize: datetime,
+        lineage: str,
+        end_optimize: datetime,
+        output_df: pd.DataFrame,
+        case_num: int) -> Tuple[str, pd.DataFrame]:
     """
-    引数
-    start：実行開始時間
-    lineage：系統(4F東など)
-    start_optimize：最適化期間の開始日付
-    end_optimize：最適化期間の終了日付
-    output_df：最適化結果
-    weight_case：重みケース
+    Process and save optimization output data
+    
+    Args:
+        start_optimize: 最適化期間の開始日時
+        lineage: 系統(4F東など)
+        end_optimize: 最適化期間の終了日時
+        output_df: 最適化結果
+        case_num: ケース番号 (1-5)
+    
+    Returns:
+        Tuple[str, pd.DataFrame]: 出力ファイルパスと処理済みデータフレーム
     """
-    start=start-1#最適化の開始時刻は最適化を実行する時間+1なので，-1する
-    #実行日のpath取得
-    start_optimize_date=start_optimize.strftime("%Y%m%d")
-    end_optimize_date=end_optimize.strftime("%Y%m%d")
+    # Extract hour from start_optimize datetime
+    # 最適化の開始時刻は最適化を実行する時間+1なので，-1する
+    start = start_optimize.hour - 1  
+    
+    # Get paths
+    start_optimize_date = start_optimize.strftime("%Y%m%d")
+    end_optimize_date = end_optimize.strftime("%Y%m%d")
     output_path = get_path_from_config_for_outside_base_folder("output_folder_path")
-    #1日前のpathの取得
-    start_optimize_date_yesterday=(start_optimize-timedelta(days=1)).strftime("%Y%m%d")
-    end_optimize_date_yesterday=(end_optimize-timedelta(days=1)).strftime("%Y%m%d")
-    folder_path=make_folder_path(TIMESTEP[-1])
-    output_filename_yesterday=output_path + folder_path + f"/{lineage}_{start_optimize_date_yesterday}_to_{end_optimize_date_yesterday}_{weight_case}.csv"
-    folder_path=make_folder_path(start)
-    output_filename = output_path+ folder_path + f"/{lineage}_{start_optimize_date}_to_{end_optimize_date}_{weight_case}.csv"
+    
+    # Create output folder if it doesn't exist
+    folder_path = make_folder_path(start)
+    full_folder_path = output_path + folder_path
+    os.makedirs(full_folder_path, exist_ok=True)
+    
+    output_filename = os.path.join(full_folder_path, f"{lineage}_{start_optimize_date}_to_{end_optimize_date}_case{case_num}.csv")
     print(f"出力結果のファイルパス: {output_filename}")
-    if start==TIMESTEP[0]:
+
+    if start == TIMESTEP[0]:  # First timestep of the day (実行時間が1時の場合)
+        # Get yesterday's data (1日前のpathの取得)
+        start_optimize_date_yesterday = (start_optimize-timedelta(days=1)).strftime("%Y%m%d")
+        end_optimize_date_yesterday = (end_optimize-timedelta(days=1)).strftime("%Y%m%d")
+        yesterday_folder_path = make_folder_path(TIMESTEP[-1])
+        output_filename_yesterday = output_path + yesterday_folder_path + f"/{lineage}_{start_optimize_date_yesterday}_to_{end_optimize_date_yesterday}_case{case_num}.csv"
+        
         if os.path.isfile(output_filename_yesterday):
             print("1日前のフォルダがあったので実行します")
-            #1日前のデータの読み込み
-            output_df_yesterday=pd.read_csv(output_filename_yesterday,encoding="cp932")
-            #必要な部分(0～1時)のみ抽出
-            output_df_yesterday=output_df_yesterday.iloc[24:26,:]
-            output_df=pd.concat([output_df_yesterday,output_df])
+            # 1日前のデータの読み込み
+            output_df_yesterday = pd.read_csv(output_filename_yesterday, encoding="cp932")
+            # 必要な部分(0～1時)のみ抽出
+            output_df_yesterday = output_df_yesterday.iloc[24:26,:]
+            output_df = pd.concat([output_df_yesterday, output_df])
             print("更新完了！")
-
         else:
-            output_df_01=pd.DataFrame(0,index=[0,1],columns=FINAL_OPTIMIZE_OUTOUT_COLUMN)
-            output_df=pd.concat([output_df_01,output_df])
+            print("1日前のデータがないので0で初期化します")
+            output_df_01 = pd.DataFrame(0, index=[0,1], columns=FINAL_OPTIMIZE_OUTOUT_COLUMN)
+            output_df = pd.concat([output_df_01, output_df])
             print("実行1回目！")
-
     else:
-        #1つ前のタイムステップのpathを取得
-        pre_folder_path=make_pre_folder_path(start)
-        pre_output_filename=output_path+ pre_folder_path + f"/{lineage}_{start_optimize_date}_to_{end_optimize_date}_{weight_case}.csv"
-        if os.path.isfile(pre_output_filename):
-        #1つ前のタイムステップのデータの読み込み
-            output_df_pre_timestep=pd.read_csv(pre_output_filename,encoding="cp932")
-        #必要な部分(0～timestep時)のみ抽出
-            output_df_pre_timestep=output_df_pre_timestep.iloc[0:start_optimize.hour,:]
-            output_df=pd.concat([output_df_pre_timestep,output_df])
-            print(f"更新完了！")
-        else:
-            raise ValueError("ひとつ前のタイムステップのフォルダがありません")
-    output_df["Time"]=[i for i in range(len(output_df))]#Timeの数字振り直し
-    return output_filename , output_df
+        # Handle other timesteps (実行時間が1時以外(x時)の場合)
+        try:
+            # 1つ前のタイムステップのpathを取得
+            pre_folder_path = make_pre_folder_path(start)
+            pre_output_filename = output_path + pre_folder_path + f"/{lineage}_{start_optimize_date}_to_{end_optimize_date}_case{case_num}.csv"
+            
+            if os.path.isfile(pre_output_filename):
+                # 1つ前のタイムステップのデータの読み込み
+                output_df_pre_timestep = pd.read_csv(pre_output_filename, encoding="cp932")
+                # 必要な部分(0～x時)のみ抽出
+                output_df_pre_timestep = output_df_pre_timestep.iloc[0:start_optimize.hour,:]
+                output_df = pd.concat([output_df_pre_timestep, output_df])
+                print(f"更新完了！")
+            else:
+                logging.warning(f"前のタイムステップのデータが見つかりません: {pre_output_filename}")
+                # Initialize with zeros up to current hour
+                init_df = pd.DataFrame(0, index=range(start_optimize.hour), 
+                                     columns=FINAL_OPTIMIZE_OUTOUT_COLUMN)
+                output_df = pd.concat([init_df, output_df])
+                print("前のタイムステップのデータがないため、新規データで初期化しました")
+        except Exception as e:
+            logging.error(f"Error processing previous timestep: {e}")
+            # Initialize with zeros as fallback
+            init_df = pd.DataFrame(0, index=range(start_optimize.hour), 
+                                 columns=FINAL_OPTIMIZE_OUTOUT_COLUMN)
+            output_df = pd.concat([init_df, output_df])
+            print("エラーが発生したため新規データで初期化しました")
+
+    # Reset Time column (Timeの数字振り直し)
+    output_df["Time"] = range(len(output_df))
+    
+    return output_filename, output_df

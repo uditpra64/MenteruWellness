@@ -30,6 +30,7 @@ class OptimizationRunner:
         train_memory_flag: bool = False,
         lineage: str = "4F_西",
         model: XGBoostModel = None,
+        case_num: int = 1,  # Add case number parameter
     ):
         self.input_features = input_features
         self.temperature_setpoints_columns = temperature_setpoints_columns
@@ -41,13 +42,16 @@ class OptimizationRunner:
         self.end_study_date = end_study_date
         self.start_optimize_date = start_optimize_date
         self.end_optimize_date = end_optimize_date
-        self.master_data = pd.read_excel(
-            get_path_from_config(master_data_path), sheet_name=None
-        )
+        
+        # Read master data with header=1 to skip merged cells
+        master_data_file = get_path_from_config(master_data_path)
+        self.master_data = pd.read_excel(master_data_file, sheet_name=None, header=1)
+        
         self.train_memory_flag = train_memory_flag
         self.input_data = None
         self.lineage = lineage
         self.model = model
+        self.case_num = case_num  # Store case number
 
     def run(self):
         self._load_data()
@@ -63,6 +67,7 @@ class OptimizationRunner:
             model=self.model,
             master_data=self.master_data,
             train_memory_flag=self.train_memory_flag,
+            case_num=self.case_num,  # Pass case number to optimization logic
         )
 
     def _load_data(self):

@@ -38,10 +38,11 @@ def create_df_for_normalize(
     df = df.reset_index(drop=True)
 
     data_for_normalize = []
-    # pmv_values = []  # List to store PMV values
 
     master_pro_path = get_path_from_config("master_data_path")
-    master_data = pd.read_excel(master_pro_path, sheet_name=None)
+    # Read with header=1 to skip merged cells
+    master_data = pd.read_excel(master_pro_path, sheet_name=None, header=1)
+    
     lineage = lineage.replace("_", "")
     used_column_list = input_features_columns
     other_column = temperature_setpoints_columns
@@ -50,13 +51,12 @@ def create_df_for_normalize(
     for time in tqdm(
         range(len(df)), desc=f"df_for_normalize_{lineage}を作成中", ncols=100
     ):
-        # master_data # ここで読み込んでいる
         extracted_master_data = extract_master_data(df, time, master_data["最適化"])
-        # latest_weight = extracted_master_data.iloc[0:1, 2:6]  # 重み係数,dataframe
-        master_pro = extracted_master_data.iloc[
-            0:1, 6:15
-        ]  # 知的生産性の固定変数,dataframe
-        master_com = extracted_master_data.iloc[0:1, 21:25]  # 快適性指標の固定変数
+        
+        # Get master_pro and master_com from the extracted data using positional access
+        master_pro = extracted_master_data.iloc[0:1, 2:11]
+        master_com = extracted_master_data.iloc[0:1, 17:21]
+        
         # Check that df remains a DataFrame at all times
         assert isinstance(
             df, pd.DataFrame
@@ -117,22 +117,17 @@ def extract_master_data(
         time (int): データフレームの各行のインデックス（タイムステップ）
         master_data (pd.DataFrame): マスタデータフレーム
     """
-    a = master_data.iloc[0:1, :]
-    b = master_data[master_data["月"] == df["date"][time].date().month]
-
-    master_data_month = pd.concat([a, b], axis=0, ignore_index=True)
-    columns_list = master_data_month.columns
-
-    master_data_month["月"] = master_data_month["月"].astype("object")
-    master_data_month.at[0, "月"] = columns_list[0]
-    master_data_month.at[0, "期間区分"] = columns_list[1]
-    master_data_month["ベンチマークケース設定温度"] = master_data_month[
-        "ベンチマークケース設定温度"
-    ].astype("object")
-
-    master_data_month.at[0, "ベンチマークケース設定温度"] = columns_list[-1]
-    master_data_month.columns = master_data_month.iloc[0]
-    master_data_month = master_data_month.drop(master_data_month.index[0])
-    master_data_month.reset_index(drop=True, inplace=True)
-
-    return master_data_month
+    # Get month from the data
+    current_month = df["date"][time].date().month
+    
+    # With header=1, the first column is "Unnamed: 0" which contains the month
+    month_col = master_data.columns[0]
+    
+    # Filter for the current month
+    month_data = master_data[master_data[month_col] == current_month]
+    
+    if month_data.empty:
+        print(f"Warning: No data found for month {current_month}, using first row as default")
+        month_data = master_data.iloc[0:1]
+    
+    return month_data.reset_index(drop=True)
